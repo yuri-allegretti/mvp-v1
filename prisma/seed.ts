@@ -161,8 +161,8 @@ async function main() {
       ruleType: CategorizationRuleType.counterparty_and_amount_range,
       conditions: {
         counterparty: "FORNECEDOR DEMO",
-        minAmount: 100,
-        maxAmount: 5000,
+        min: 100,
+        max: 5000,
       },
       priority: 650,
       confidence: 78,
@@ -174,6 +174,22 @@ async function main() {
       conditions: { value: "00000000000000" },
       priority: 950,
       confidence: 96,
+    },
+    {
+      id: "rule-impostos-iof-description",
+      categoryId: "cat-impostos",
+      ruleType: CategorizationRuleType.description_contains,
+      conditions: { value: "IOF" },
+      priority: 920,
+      confidence: 94,
+    },
+    {
+      id: "rule-fornecedor-copel-counterparty",
+      categoryId: "cat-fornecedor",
+      ruleType: CategorizationRuleType.counterparty_contains,
+      conditions: { value: "COPEL" },
+      priority: 760,
+      confidence: 91,
     },
   ] as const;
 

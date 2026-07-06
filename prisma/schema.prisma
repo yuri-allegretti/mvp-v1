@@ -1,0 +1,644 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  accountant
+  viewer
+}
+
+enum TransactionType {
+  income
+  expense
+}
+
+enum ExpectedTransactionType {
+  income
+  expense
+  both
+}
+
+enum ImportSource {
+  itau_xls
+  itau_xlsx
+  itau_pdf
+  csv
+}
+
+enum BankImportStatus {
+  success
+  partial_success
+  failed
+}
+
+enum ImportedTransactionRawStatus {
+  imported
+  duplicate
+  invalid
+  ignored
+}
+
+enum ImportIssueSeverity {
+  error
+  warning
+}
+
+enum ConfidenceBand {
+  high
+  medium
+  low
+}
+
+enum CategorizationSuggestionStatus {
+  generated
+  applied
+  accepted
+  corrected
+  rejected
+  superseded
+}
+
+enum CategorizationRuleType {
+  document_equals
+  counterparty_equals
+  counterparty_contains
+  description_contains
+  description_equals
+  amount_range
+  counterparty_and_amount_range
+}
+
+enum CategorizationRuleSource {
+  manual
+  correction_history
+  system
+}
+
+enum CategorizationRuleStatus {
+  active
+  inactive
+}
+
+enum PendingStatus {
+  open
+  in_review
+  resolved
+  dismissed
+}
+
+enum PendingSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum DecisionMode {
+  automatic
+  accepted
+  corrected
+  rejected
+  undefined_decision
+}
+
+enum DuplicateDecision {
+  duplicate_confirmed
+  not_duplicate
+  allowed_exception
+}
+
+enum RecurrenceSuggestionStatus {
+  pending
+  approved
+  rejected
+  edited
+}
+
+enum RecurrenceStatus {
+  active
+  paused
+  ended
+  rejected
+}
+
+enum RecurrenceFrequency {
+  monthly
+  weekly
+  biweekly
+  yearly
+  unknown
+}
+
+enum RecurrenceType {
+  fixed
+  variable
+}
+
+enum RecurrencePatternKind {
+  monthly_fixed
+  monthly_variable
+  weekly_recurring
+  biweekly_recurring
+  installment
+  frequent_supplier
+  recurring_income
+  irregular_business_recurring
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  passwordHash        String
+  name                String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  memberships         CompanyMembership[]
+  uploadedFiles       UploadedFile[]       @relation("UploadedFileUploader")
+  assignedPending     PendingItem[]        @relation("PendingAssignedUser")
+  resolvedPending     PendingItem[]        @relation("PendingResolvedUser")
+  decidedDuplicates   DuplicateCandidate[] @relation("DuplicateDecidedBy")
+  approvedRecurrences ApprovedRecurrence[] @relation("RecurrenceApprovedBy")
+  auditEvents         AuditEvent[]         @relation("AuditActor")
+}
+
+model Company {
+  id                        String                       @id @default(cuid())
+  name                      String
+  createdAt                 DateTime                     @default(now())
+  updatedAt                 DateTime                     @updatedAt
+  memberships               CompanyMembership[]
+  bankAccounts              BankAccount[]
+  uploadedFiles             UploadedFile[]
+  bankImports               BankImport[]
+  rawImports                ImportedTransactionRaw[]
+  importIssues              ImportIssue[]
+  transactions              Transaction[]
+  categories                Category[]
+  categorizationRules       CategorizationRule[]
+  categorizationSuggestions CategorizationSuggestion[]
+  pendingItems              PendingItem[]
+  duplicateCandidates       DuplicateCandidate[]
+  recurrenceSuggestions     RecurrenceSuggestion[]
+  approvedRecurrences       ApprovedRecurrence[]
+  baseScenario              BaseScenario?
+  projectedCashflowItems    ProjectedCashflowItem[]
+  auditEvents               AuditEvent[]
+}
+
+model CompanyMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId, role])
+}
+
+model BankAccount {
+  id                  String                   @id @default(cuid())
+  companyId           String
+  bankName            String
+  agency              String?
+  accountNumberMasked String
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  company             Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankImports         BankImport[]
+  rawImports          ImportedTransactionRaw[]
+  transactions        Transaction[]
+
+  @@unique([id, companyId])
+  @@index([companyId])
+}
+
+model UploadedFile {
+  id               String       @id @default(cuid())
+  companyId        String
+  uploadedByUserId String
+  originalFileName String
+  storagePath      String
+  sha256           String?
+  mimeType         String?
+  sizeBytes        Int
+  createdAt        DateTime     @default(now())
+  company          Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  uploadedBy       User         @relation("UploadedFileUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  imports          BankImport[]
+
+  @@index([companyId, createdAt])
+  @@index([uploadedByUserId])
+}
+
+model BankImport {
+  id                    String                   @id @default(cuid())
+  companyId             String
+  bankAccountId         String
+  uploadedFileId        String?
+  sourceFileId          String
+  originalFileName      String
+  detectedBank          String
+  detectedFormat        String
+  parserVersion         String
+  layoutVersion         String
+  externalIdVersion     String
+  importPipelineVersion String
+  periodStart           DateTime?                @db.Date
+  periodEnd             DateTime?                @db.Date
+  totalRows             Int                      @default(0)
+  parsedRows            Int                      @default(0)
+  ignoredRows           Int                      @default(0)
+  importedTransactions  Int                      @default(0)
+  duplicateTransactions Int                      @default(0)
+  invalidRows           Int                      @default(0)
+  status                BankImportStatus
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  company               Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankAccount           BankAccount              @relation(fields: [bankAccountId, companyId], references: [id, companyId], onDelete: Restrict)
+  uploadedFile          UploadedFile?            @relation(fields: [uploadedFileId], references: [id], onDelete: SetNull)
+  rawTransactions       ImportedTransactionRaw[]
+  issues                ImportIssue[]
+
+  @@unique([id, companyId])
+  @@index([companyId, bankAccountId, createdAt])
+  @@index([sourceFileId])
+  @@index([uploadedFileId])
+}
+
+model ImportedTransactionRaw {
+  id               String                       @id @default(cuid())
+  companyId        String
+  bankImportId     String
+  bankAccountId    String
+  transactionId    String?
+  source           ImportSource
+  sourceRowNumber  Int?
+  date             DateTime?                    @db.Date
+  description      String?
+  amount           Decimal?                     @db.Decimal(18, 2)
+  type             TransactionType?
+  balanceAfter     Decimal?                     @db.Decimal(18, 2)
+  externalId       String?
+  counterpartyName String?
+  documentNumber   String?
+  rawData          Json
+  status           ImportedTransactionRawStatus
+  createdAt        DateTime                     @default(now())
+  company          Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankImport       BankImport                   @relation(fields: [bankImportId, companyId], references: [id, companyId], onDelete: Cascade)
+  bankAccount      BankAccount                  @relation(fields: [bankAccountId, companyId], references: [id, companyId], onDelete: Restrict)
+  transaction      Transaction?                 @relation(fields: [transactionId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@index([bankImportId])
+  @@index([companyId, bankAccountId, externalId])
+  @@index([transactionId])
+}
+
+model ImportIssue {
+  id           String              @id @default(cuid())
+  companyId    String
+  bankImportId String
+  code         String
+  severity     ImportIssueSeverity
+  message      String
+  rowNumber    Int?
+  rawValue     Json?
+  createdAt    DateTime            @default(now())
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankImport   BankImport          @relation(fields: [bankImportId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@index([companyId, bankImportId, severity])
+}
+
+model Transaction {
+  id                            String                             @id @default(cuid())
+  companyId                     String
+  bankAccountId                 String
+  date                          DateTime                           @db.Date
+  amount                        Decimal                            @db.Decimal(18, 2)
+  type                          TransactionType
+  description                   String
+  source                        ImportSource
+  sourceFileId                  String
+  externalId                    String
+  counterpartyName              String?
+  documentNumber                String?
+  categoryId                    String?
+  createdAt                     DateTime                           @default(now())
+  updatedAt                     DateTime                           @updatedAt
+  company                       Company                            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  bankAccount                   BankAccount                        @relation(fields: [bankAccountId, companyId], references: [id, companyId], onDelete: Restrict)
+  category                      Category?                          @relation(fields: [categoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  importEvidence                ImportedTransactionRaw[]
+  categorizationSuggestions     CategorizationSuggestion[]
+  pendingItems                  PendingItem[]
+  duplicateCandidatesAsOriginal DuplicateCandidate[]               @relation("DuplicateOriginalTransaction")
+  duplicateCandidatesAsCandidate DuplicateCandidate[]              @relation("DuplicateCandidateTransaction")
+  recurrenceLinks               RecurrenceSuggestionTransaction[]
+  auditEvents                   AuditEvent[]
+
+  @@unique([id, companyId])
+  @@unique([companyId, bankAccountId, externalId], name: "transaction_external_identity")
+  @@index([companyId, bankAccountId, date])
+  @@index([companyId, categoryId])
+}
+
+model Category {
+  id                        String                       @id @default(cuid())
+  companyId                 String
+  name                      String
+  expectedTransactionType   ExpectedTransactionType
+  isActive                  Boolean                      @default(true)
+  createdAt                 DateTime                     @default(now())
+  updatedAt                 DateTime                     @updatedAt
+  company                   Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  transactions              Transaction[]
+  rules                     CategorizationRule[]
+  suggestions               CategorizationSuggestion[]
+  recurrenceSuggestions     RecurrenceSuggestion[]
+  approvedRecurrences       ApprovedRecurrence[]
+  previousCategoryAuditLogs AuditEvent[]                  @relation("AuditPreviousCategory")
+  finalCategoryAuditLogs    AuditEvent[]                  @relation("AuditFinalCategory")
+
+  @@unique([id, companyId])
+  @@unique([companyId, name])
+  @@index([companyId, isActive])
+}
+
+model CategorizationRule {
+  id                      String                   @id @default(cuid())
+  companyId               String
+  categoryId              String
+  ruleType                CategorizationRuleType
+  conditions              Json
+  priority                Int
+  confidence              Int
+  status                  CategorizationRuleStatus @default(active)
+  source                  CategorizationRuleSource
+  createdFromAuditEventId String?
+  version                 Int                      @default(1)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  company                 Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category                Category                 @relation(fields: [categoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  createdFromAuditEvent   AuditEvent?              @relation("RulesCreatedFromAudit", fields: [createdFromAuditEventId, companyId], references: [id, companyId], onDelete: Restrict)
+  suggestions             CategorizationSuggestion[]
+  auditEvents             AuditEvent[]
+
+  @@unique([id, companyId])
+  @@index([companyId, status, priority])
+  @@index([companyId, categoryId])
+  @@index([createdFromAuditEventId])
+}
+
+model CategorizationSuggestion {
+  id                  String                         @id @default(cuid())
+  companyId           String
+  transactionId       String
+  suggestedCategoryId String
+  ruleId              String?
+  evaluationId        String
+  deduplicationKey    String                         @unique
+  score               Int
+  confidenceBand      ConfidenceBand
+  origin              String
+  explanation         String
+  evidence            Json
+  engineVersion       String
+  status              CategorizationSuggestionStatus @default(generated)
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+  company             Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  transaction         Transaction                    @relation(fields: [transactionId, companyId], references: [id, companyId], onDelete: Cascade)
+  suggestedCategory   Category                       @relation(fields: [suggestedCategoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  rule                CategorizationRule?            @relation(fields: [ruleId, companyId], references: [id, companyId], onDelete: Restrict)
+  pendingItems        PendingItem[]
+  auditEvents         AuditEvent[]
+
+  @@unique([id, companyId])
+  @@index([companyId, transactionId, createdAt])
+  @@index([companyId, evaluationId])
+  @@index([companyId, ruleId])
+}
+
+model PendingItem {
+  id                     String                    @id @default(cuid())
+  companyId              String
+  type                   String
+  status                 PendingStatus             @default(open)
+  severity               PendingSeverity
+  transactionId          String?
+  suggestionId           String?
+  recurrenceSuggestionId String?
+  duplicateCandidateId   String?
+  deduplicationKey       String
+  title                  String
+  description            String
+  metadata               Json
+  assignedToUserId       String?
+  resolvedAt             DateTime?
+  resolvedByUserId       String?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  company                Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  transaction            Transaction?              @relation(fields: [transactionId, companyId], references: [id, companyId], onDelete: Restrict)
+  suggestion             CategorizationSuggestion? @relation(fields: [suggestionId, companyId], references: [id, companyId], onDelete: Restrict)
+  recurrenceSuggestion   RecurrenceSuggestion?     @relation(fields: [recurrenceSuggestionId, companyId], references: [id, companyId], onDelete: Restrict)
+  duplicateCandidate     DuplicateCandidate?       @relation(fields: [duplicateCandidateId, companyId], references: [id, companyId], onDelete: Restrict)
+  assignedTo             User?                     @relation("PendingAssignedUser", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  resolvedBy             User?                     @relation("PendingResolvedUser", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([id, companyId])
+  @@index([companyId, type, status, createdAt])
+  @@index([companyId, transactionId])
+  @@index([companyId, suggestionId])
+  @@index([companyId, recurrenceSuggestionId])
+  @@index([companyId, duplicateCandidateId])
+  @@index([deduplicationKey, status])
+}
+
+model DuplicateCandidate {
+  id                     String             @id @default(cuid())
+  companyId              String
+  transactionId          String
+  candidateTransactionId String
+  score                  Int
+  evidence               Json
+  decision               DuplicateDecision?
+  decidedByUserId        String?
+  decidedAt              DateTime?
+  createdAt              DateTime           @default(now())
+  company                Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  transaction            Transaction        @relation("DuplicateOriginalTransaction", fields: [transactionId, companyId], references: [id, companyId], onDelete: Cascade)
+  candidateTransaction   Transaction        @relation("DuplicateCandidateTransaction", fields: [candidateTransactionId, companyId], references: [id, companyId], onDelete: Cascade)
+  decidedBy              User?              @relation("DuplicateDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  pendingItems           PendingItem[]
+
+  @@unique([id, companyId])
+  @@unique([companyId, transactionId, candidateTransactionId])
+  @@index([companyId, createdAt])
+  @@index([decidedByUserId])
+}
+
+model RecurrenceSuggestion {
+  id                        String                            @id @default(cuid())
+  companyId                 String
+  categoryId                String?
+  type                      TransactionType
+  representativeDescription String
+  normalizedDescription     String
+  frequency                 RecurrenceFrequency
+  recurrenceType            RecurrenceType
+  patternKind               RecurrencePatternKind?
+  averageAmount             Decimal                           @db.Decimal(18, 2)
+  estimatedNextAmount       Decimal                           @db.Decimal(18, 2)
+  amountVariationPercent    Decimal                           @db.Decimal(8, 4)
+  expectedNextDate          DateTime?                          @db.Date
+  confidenceScore           Int
+  status                    RecurrenceSuggestionStatus         @default(pending)
+  evidence                  Json
+  startDate                 DateTime                           @db.Date
+  endDate                   DateTime?                          @db.Date
+  installmentCount          Int?
+  deduplicationKey          String                            @unique
+  createdAt                 DateTime                           @default(now())
+  updatedAt                 DateTime                           @updatedAt
+  company                   Company                            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category                  Category?                          @relation(fields: [categoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  transactions              RecurrenceSuggestionTransaction[]
+  pendingItems              PendingItem[]
+  approvedRecurrences       ApprovedRecurrence[]
+  auditEvents               AuditEvent[]
+
+  @@unique([id, companyId])
+  @@index([companyId, status, createdAt])
+  @@index([companyId, categoryId])
+}
+
+model RecurrenceSuggestionTransaction {
+  id                     String               @id @default(cuid())
+  companyId              String
+  recurrenceSuggestionId String
+  transactionId          String
+  createdAt              DateTime             @default(now())
+  suggestion             RecurrenceSuggestion @relation(fields: [recurrenceSuggestionId, companyId], references: [id, companyId], onDelete: Cascade)
+  transaction            Transaction          @relation(fields: [transactionId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@unique([recurrenceSuggestionId, transactionId])
+  @@index([companyId, transactionId])
+}
+
+model ApprovedRecurrence {
+  id                     String                  @id @default(cuid())
+  companyId              String
+  recurrenceSuggestionId String?
+  categoryId             String?
+  type                   TransactionType
+  description            String
+  frequency              RecurrenceFrequency
+  recurrenceType         RecurrenceType
+  estimatedAmount        Decimal                 @db.Decimal(18, 2)
+  expectedDay            Int?
+  nextDate               DateTime?               @db.Date
+  startDate              DateTime                @db.Date
+  endDate                DateTime?               @db.Date
+  installmentCount       Int?
+  status                 RecurrenceStatus        @default(active)
+  approvedByUserId       String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  company                Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  recurrenceSuggestion   RecurrenceSuggestion?   @relation(fields: [recurrenceSuggestionId, companyId], references: [id, companyId], onDelete: Restrict)
+  category               Category?               @relation(fields: [categoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  approvedBy             User?                   @relation("RecurrenceApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  projectedItems         ProjectedCashflowItem[]
+  auditEvents            AuditEvent[]
+
+  @@unique([id, companyId])
+  @@index([companyId, status])
+  @@index([companyId, recurrenceSuggestionId])
+  @@index([approvedByUserId])
+}
+
+model BaseScenario {
+  id        String                  @id @default(cuid())
+  companyId String                  @unique
+  name      String                  @default("Base")
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  company   Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items     ProjectedCashflowItem[]
+
+  @@unique([id, companyId])
+}
+
+model ProjectedCashflowItem {
+  id                   String             @id @default(cuid())
+  companyId            String
+  baseScenarioId       String
+  approvedRecurrenceId String
+  date                 DateTime           @db.Date
+  amount               Decimal            @db.Decimal(18, 2)
+  type                 TransactionType
+  description          String
+  horizonDays          Int
+  createdAt            DateTime           @default(now())
+  company              Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  scenario             BaseScenario       @relation(fields: [baseScenarioId, companyId], references: [id, companyId], onDelete: Cascade)
+  approvedRecurrence   ApprovedRecurrence @relation(fields: [approvedRecurrenceId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@index([companyId, date])
+  @@index([companyId, baseScenarioId])
+  @@index([companyId, approvedRecurrenceId])
+}
+
+model AuditEvent {
+  id                     String                    @id @default(cuid())
+  companyId              String
+  actorUserId            String?
+  entityType             String
+  entityId               String
+  action                 String
+  transactionId          String?
+  suggestionId           String?
+  recurrenceSuggestionId String?
+  approvedRecurrenceId   String?
+  ruleId                 String?
+  previousCategoryId     String?
+  finalCategoryId        String?
+  decisionMode           DecisionMode?
+  reason                 String?
+  metadata               Json
+  createdAt              DateTime                  @default(now())
+  company                Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  actor                  User?                     @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  transaction            Transaction?              @relation(fields: [transactionId, companyId], references: [id, companyId], onDelete: Restrict)
+  suggestion             CategorizationSuggestion? @relation(fields: [suggestionId, companyId], references: [id, companyId], onDelete: Restrict)
+  recurrenceSuggestion   RecurrenceSuggestion?     @relation(fields: [recurrenceSuggestionId, companyId], references: [id, companyId], onDelete: Restrict)
+  approvedRecurrence     ApprovedRecurrence?       @relation(fields: [approvedRecurrenceId, companyId], references: [id, companyId], onDelete: Restrict)
+  rule                   CategorizationRule?       @relation(fields: [ruleId, companyId], references: [id, companyId], onDelete: Restrict)
+  previousCategory       Category?                 @relation("AuditPreviousCategory", fields: [previousCategoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  finalCategory          Category?                 @relation("AuditFinalCategory", fields: [finalCategoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  createdRules           CategorizationRule[]      @relation("RulesCreatedFromAudit")
+
+  @@unique([id, companyId])
+  @@index([companyId, entityType, entityId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([actorUserId])
+  @@index([companyId, transactionId, createdAt])
+  @@index([companyId, suggestionId])
+  @@index([companyId, recurrenceSuggestionId])
+  @@index([companyId, approvedRecurrenceId])
+  @@index([companyId, ruleId])
+}

@@ -16,8 +16,10 @@
   "dependencies": {
     "@prisma/client": "6.19.3",
     "next": "^15.0.0",
+    "pdfjs-dist": "^6.0.227",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.0.0"
   },
   "devDependencies": {

@@ -89,6 +89,10 @@ async function cleanupDemoImport() {
   const companyId = "demo-company";
   await prisma.auditEvent.deleteMany({ where: { companyId } });
   await prisma.pendingItem.deleteMany({ where: { companyId } });
+  await prisma.projectedCashflowItem.deleteMany({ where: { companyId } });
+  await prisma.approvedRecurrence.deleteMany({ where: { companyId } });
+  await prisma.recurrenceSuggestionTransaction.deleteMany({ where: { companyId } });
+  await prisma.recurrenceSuggestion.deleteMany({ where: { companyId } });
   await prisma.categorizationSuggestion.deleteMany({ where: { companyId } });
   await prisma.importedTransactionRaw.deleteMany({ where: { companyId } });
   await prisma.importIssue.deleteMany({ where: { companyId } });

@@ -118,6 +118,7 @@ enum RecurrenceSuggestionStatus {
   approved
   rejected
   edited
+  superseded
 }
 
 enum RecurrenceStatus {

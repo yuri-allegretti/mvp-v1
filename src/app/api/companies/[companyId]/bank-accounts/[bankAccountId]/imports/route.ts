@@ -26,14 +26,14 @@ function sanitizeStorageFileName(fileName: string): string {
 }
 
 async function routeParams(context: {
-  params: RouteParams | Promise<RouteParams>;
+  params: Promise<RouteParams>;
 }): Promise<RouteParams> {
   return context.params;
 }
 
 export async function POST(
   request: Request,
-  context: { params: RouteParams | Promise<RouteParams> },
+  context: { params: Promise<RouteParams> },
 ) {
   const uploadedByUserId = request.headers.get("x-user-id");
   if (!uploadedByUserId) {

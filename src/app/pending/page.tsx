@@ -7,7 +7,8 @@ export default async function PendingPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { demoContext, currentUser, currentUserId } = await getDemoPageData(searchParams);
+  const { demoContext, currentUser, currentUserId, currentCompanyId, currentBankAccountId } =
+    await getDemoPageData(searchParams);
   const companyId = demoContext.company?.id;
   const companyName = demoContext.company?.name ?? "Empresa demo indisponível";
   const pendingItems = companyId ? await listPendingItemsForDemo({ companyId }) : [];
@@ -16,9 +17,13 @@ export default async function PendingPage({
     <DemoShell
       currentPath="/pending"
       currentUserId={currentUserId}
+      currentCompanyId={currentCompanyId ?? ""}
+      currentBankAccountId={currentBankAccountId}
       companyName={companyName}
       userRoleLabel={currentUser?.role ?? "indefinido"}
       users={demoContext.users}
+      companies={demoContext.companies}
+      bankAccounts={demoContext.bankAccounts}
       title="Pendências"
       description="Caixa operacional unificada da V1."
     >

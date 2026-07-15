@@ -8,7 +8,8 @@ export default async function DashboardPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { demoContext, currentUser, currentUserId } = await getDemoPageData(searchParams);
+  const { demoContext, currentUser, currentUserId, currentCompanyId, currentBankAccountId } =
+    await getDemoPageData(searchParams);
   const companyId = demoContext.company?.id;
   const companyName = demoContext.company?.name ?? "Empresa demo indisponível";
   const summary = companyId ? await getDashboardSummary(companyId) : null;
@@ -17,9 +18,13 @@ export default async function DashboardPage({
     <DemoShell
       currentPath="/dashboard"
       currentUserId={currentUserId}
+      currentCompanyId={currentCompanyId ?? ""}
+      currentBankAccountId={currentBankAccountId}
       companyName={companyName}
       userRoleLabel={currentUser?.role ?? "indefinido"}
       users={demoContext.users}
+      companies={demoContext.companies}
+      bankAccounts={demoContext.bankAccounts}
       title="Dashboard"
       description="Resumo operacional da empresa demo."
     >

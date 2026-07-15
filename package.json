@@ -9,7 +9,10 @@
     "db:seed": "prisma db seed",
     "test": "vitest run",
     "dev": "next dev",
-    "demo:end-to-end": "tsx scripts/demo-end-to-end.ts"
+    "demo:reset": "tsx scripts/demo-reset.ts",
+    "demo:fixtures": "tsx scripts/demo-prepare-fixtures.ts",
+    "demo:e2e": "tsx scripts/demo-e2e.ts",
+    "demo:end-to-end": "tsx scripts/demo-e2e.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

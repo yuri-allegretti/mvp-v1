@@ -10,7 +10,7 @@ import type {
   SuggestionOrigin,
   SuggestionStatus,
   TransactionRecord,
-} from "../domain/models.js";
+} from "../domain/models";
 
 export interface CreateSuggestionInput {
   companyId: string;

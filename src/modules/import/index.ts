@@ -9,6 +9,7 @@ export {
   BankImportIntegrationError,
   importUploadedBankStatement,
 } from "./importBankStatementService";
+export { runPostImportProcessing } from "./services/postImportProcessingWorkflow";
 export { validateImportFile } from "./core/security/validateImportFile";
 export { extractItauCounterparty } from "./core/itau/itauCounterpartyExtractor";
 export {
@@ -35,3 +36,4 @@ export type {
   ImportUploadedBankStatementParams,
   ImportUploadedBankStatementResult,
 } from "./importBankStatementService";
+export type { PostImportProcessingSummary } from "./services/postImportProcessingWorkflow";

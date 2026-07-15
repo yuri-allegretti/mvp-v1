@@ -1,17 +1,33 @@
-export const demoCompanyId = "demo-company";
-export const demoBankAccountId = "demo-itau-account";
-export const demoAdminUserId = "demo-admin";
-export const demoAccountantUserId = "demo-accountant";
-export const demoViewerUserId = "demo-viewer";
-export const recommendedDemoUserId = demoAccountantUserId;
-
-export const demoUserIds = [
+export {
   demoAdminUserId,
   demoAccountantUserId,
-  demoViewerUserId,
-] as const;
+  demoBankAccountId,
+  demoCompanies,
+  demoCompanyId,
+  demoIsolationBankAccountId,
+  demoIsolationCompanyId,
+  demoSecondaryBankAccountId,
+  demoUserIds,
+  recommendedDemoUserId,
+} from "../modules/demo/demoSetup";
 
 export function withUserId(path: string, userId: string): string {
   const separator = path.includes("?") ? "&" : "?";
   return `${path}${separator}userId=${encodeURIComponent(userId)}`;
+}
+
+export function withDemoContext(
+  path: string,
+  context: {
+    userId: string;
+    companyId?: string | null;
+    bankAccountId?: string | null;
+  },
+): string {
+  const params = new URLSearchParams();
+  params.set("userId", context.userId);
+  if (context.companyId) params.set("companyId", context.companyId);
+  if (context.bankAccountId) params.set("bankAccountId", context.bankAccountId);
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${params.toString()}`;
 }

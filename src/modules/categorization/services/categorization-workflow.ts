@@ -1,14 +1,14 @@
 import type { PrismaClient } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
-import { AuditService } from "./audit-service.js";
-import { CategorizationDecisionService } from "./categorization-decision-service.js";
+import { AuditService } from "./audit-service";
+import { CategorizationDecisionService } from "./categorization-decision-service";
 import {
   CategorizationEngine,
   type CategorizationEngineResult,
-} from "./categorization-engine.js";
-import { PendingGenerationService } from "./pending-generation-service.js";
-import { RuleEvaluationService } from "./rule-evaluation-service.js";
-import { PrismaCategorizationStore } from "../stores/prismaCategorizationStore.js";
+} from "./categorization-engine";
+import { PendingGenerationService } from "./pending-generation-service";
+import { RuleEvaluationService } from "./rule-evaluation-service";
+import { PrismaCategorizationStore } from "../stores/prismaCategorizationStore";
 
 export interface CategorizationServices {
   store: PrismaCategorizationStore;

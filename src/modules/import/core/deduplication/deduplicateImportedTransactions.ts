@@ -1,4 +1,5 @@
 import type { ImportedBankTransaction } from "../types";
+import { buildExternalIdBaseKey } from "./generateExternalId";
 
 export interface DeduplicationResult {
   transactions: ImportedBankTransaction[];
@@ -13,11 +14,21 @@ export function deduplicateImportedTransactions(
   const duplicates: ImportedBankTransaction[] = [];
 
   for (const transaction of transactions) {
-    if (seen.has(transaction.externalId)) {
+    const identityKey = buildExternalIdBaseKey({
+      companyId: transaction.companyId,
+      bankAccountId: transaction.bankAccountId,
+      date: transaction.date,
+      amount: transaction.amount,
+      description: transaction.description,
+      ...(transaction.documentNumber
+        ? { documentNumber: transaction.documentNumber }
+        : {}),
+    });
+    if (seen.has(identityKey)) {
       duplicates.push(transaction);
       continue;
     }
-    seen.add(transaction.externalId);
+    seen.add(identityKey);
     unique.push(transaction);
   }
 

@@ -1,5 +1,6 @@
 import { DemoShell } from "../_components/demoShell";
 import { ActionButton } from "../_components/actionButton";
+import { RecurrenceSuggestionActions } from "../_components/recurrenceSuggestionActions";
 import { getDemoPageData } from "../_components/demoPageData";
 import {
   listApprovedRecurrencesForDemo,
@@ -11,7 +12,8 @@ export default async function RecurrencesPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { demoContext, currentUser, currentUserId } = await getDemoPageData(searchParams);
+  const { demoContext, currentUser, currentUserId, currentCompanyId, currentBankAccountId } =
+    await getDemoPageData(searchParams);
   const companyId = demoContext.company?.id;
   const companyName = demoContext.company?.name ?? "Empresa demo indisponível";
   const [suggestions, approvedRecurrences] = companyId
@@ -25,9 +27,13 @@ export default async function RecurrencesPage({
     <DemoShell
       currentPath="/recurrences"
       currentUserId={currentUserId}
+      currentCompanyId={currentCompanyId ?? ""}
+      currentBankAccountId={currentBankAccountId}
       companyName={companyName}
       userRoleLabel={currentUser?.role ?? "indefinido"}
       users={demoContext.users}
+      companies={demoContext.companies}
+      bankAccounts={demoContext.bankAccounts}
       title="Recorrências"
       description="Sugestões detectadas, aprovações e gestão mínima de status."
     >
@@ -42,6 +48,7 @@ export default async function RecurrencesPage({
                 <th>Valor estimado</th>
                 <th>Score</th>
                 <th>Status</th>
+                <th>Próxima data</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -53,22 +60,19 @@ export default async function RecurrencesPage({
                   <td>{suggestion.estimatedNextAmount.toFixed(2)}</td>
                   <td>{suggestion.confidenceScore}</td>
                   <td>{suggestion.status}</td>
+                  <td>{suggestion.expectedNextDate?.toISOString().slice(0, 10) ?? "-"}</td>
                   <td>
-                    <div className="actions">
-                      <ActionButton
-                        userId={currentUserId}
-                        endpoint={`/api/companies/${companyId}/recurrences/${suggestion.id}/approve`}
-                        label="Aprovar"
-                        body={{ reason: "Aprovação manual via demo UI" }}
-                        variant="primary"
-                      />
-                      <ActionButton
-                        userId={currentUserId}
-                        endpoint={`/api/companies/${companyId}/recurrences/${suggestion.id}/reject`}
-                        label="Rejeitar"
-                        body={{ reason: "Rejeição manual via demo UI" }}
-                      />
-                    </div>
+                    <RecurrenceSuggestionActions
+                      userId={currentUserId}
+                      companyId={companyId ?? ""}
+                      suggestionId={suggestion.id}
+                      defaultDescription={suggestion.representativeDescription}
+                      defaultEstimatedAmount={suggestion.estimatedNextAmount.toFixed(2)}
+                      defaultFrequency={suggestion.frequency}
+                      defaultNextDate={suggestion.expectedNextDate?.toISOString().slice(0, 10) ?? null}
+                      defaultEndDate={suggestion.endDate?.toISOString().slice(0, 10) ?? null}
+                      defaultInstallmentCount={suggestion.installmentCount}
+                    />
                   </td>
                 </tr>
               ))}
@@ -84,6 +88,7 @@ export default async function RecurrencesPage({
                 <th>Valor</th>
                 <th>Frequência</th>
                 <th>Status</th>
+                <th>Próxima data</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -94,6 +99,7 @@ export default async function RecurrencesPage({
                   <td>{recurrence.estimatedAmount.toFixed(2)}</td>
                   <td>{recurrence.frequency}</td>
                   <td>{recurrence.status}</td>
+                  <td>{recurrence.nextDate?.toISOString().slice(0, 10) ?? "-"}</td>
                   <td>
                     <div className="actions">
                       <ActionButton

@@ -4,7 +4,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
-import { ConcurrencyError, DomainInvariantError } from "../domain/errors.js";
+import { ConcurrencyError, DomainInvariantError } from "../domain/errors";
 import {
   categoryAcceptsTransaction,
   PendingTypes,
@@ -18,7 +18,7 @@ import {
   type PendingStatus,
   type SuggestionStatus,
   type TransactionRecord,
-} from "../domain/models.js";
+} from "../domain/models";
 import type {
   ApplyDecisionInput,
   ApplyDecisionResult,
@@ -26,7 +26,7 @@ import type {
   CategorizationStore,
   CreatePendingInput,
   CreateSuggestionInput,
-} from "../ports/categorization-store.js";
+} from "../ports/categorization-store";
 
 const categorizationPendingTypes = Object.values(PendingTypes);
 const actionablePendingStatuses: Array<"open" | "in_review"> = ["open", "in_review"];

@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
-import { NotFoundError } from "../domain/errors.js";
+import { NotFoundError } from "../domain/errors";
 import {
   categoryAcceptsTransaction,
   confidenceBandFor,
   type CategorizationSuggestionRecord,
   type PendingItemRecord,
   type TransactionRecord,
-} from "../domain/models.js";
-import type { CategorizationStore } from "../ports/categorization-store.js";
-import { CategorizationDecisionService } from "./categorization-decision-service.js";
-import { PendingGenerationService } from "./pending-generation-service.js";
-import { RuleEvaluationService } from "./rule-evaluation-service.js";
+} from "../domain/models";
+import type { CategorizationStore } from "../ports/categorization-store";
+import { CategorizationDecisionService } from "./categorization-decision-service";
+import { PendingGenerationService } from "./pending-generation-service";
+import { RuleEvaluationService } from "./rule-evaluation-service";
 
 export type CategorizationEngineResult =
   | { outcome: "already_categorized"; transaction: TransactionRecord }

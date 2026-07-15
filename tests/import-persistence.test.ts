@@ -41,10 +41,21 @@ afterAll(async () => {
 });
 
 async function cleanup(companyIds: string[], userIds: string[]) {
+  await prisma.projectedCashflowItem.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.auditEvent.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.pendingItem.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.duplicateCandidate.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.approvedRecurrence.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.recurrenceSuggestionTransaction.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.recurrenceSuggestion.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.categorizationSuggestion.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.categorizationRule.deleteMany({ where: { companyId: { in: companyIds } } });
   await prisma.importedTransactionRaw.deleteMany({ where: { companyId: { in: companyIds } } });
   await prisma.importIssue.deleteMany({ where: { companyId: { in: companyIds } } });
   await prisma.bankImport.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.importedTransactionRaw.deleteMany({ where: { companyId: { in: companyIds } } });
   await prisma.transaction.deleteMany({ where: { companyId: { in: companyIds } } });
+  await prisma.category.deleteMany({ where: { companyId: { in: companyIds } } });
   await prisma.uploadedFile.deleteMany({ where: { companyId: { in: companyIds } } });
   await prisma.bankAccount.deleteMany({ where: { companyId: { in: companyIds } } });
   await prisma.companyMembership.deleteMany({ where: { companyId: { in: companyIds } } });
@@ -90,6 +101,50 @@ async function createImportGraph(role: Role, suffix = crypto.randomUUID()) {
   return { company, user, bankAccount };
 }
 
+async function seedFixtureCategorization(companyId: string) {
+  await prisma.category.createMany({
+    data: [
+      {
+        id: `cat-impostos-${companyId}`,
+        companyId,
+        name: "Impostos",
+        expectedTransactionType: "expense",
+      },
+      {
+        id: `cat-fornecedor-${companyId}`,
+        companyId,
+        name: "Fornecedor",
+        expectedTransactionType: "expense",
+      },
+    ],
+  });
+
+  await prisma.categorizationRule.createMany({
+    data: [
+      {
+        id: `rule-iof-${companyId}`,
+        companyId,
+        categoryId: `cat-impostos-${companyId}`,
+        ruleType: "description_contains",
+        conditions: { value: "IOF" },
+        priority: 920,
+        confidence: 94,
+        source: "manual",
+      },
+      {
+        id: `rule-copel-${companyId}`,
+        companyId,
+        categoryId: `cat-fornecedor-${companyId}`,
+        ruleType: "counterparty_contains",
+        conditions: { value: "COPEL" },
+        priority: 760,
+        confidence: 91,
+        source: "manual",
+      },
+    ],
+  });
+}
+
 function runImport(params: {
   companyId: string;
   bankAccountId: string;
@@ -115,7 +170,10 @@ describe("Itaú import persistence integration", () => {
       expect(result.transactionsCreated).toBe(36);
       expect(result.duplicatesSkipped).toBe(0);
       expect(result.invalidRows).toBe(0);
-      expect(result.categorizationTriggered).toBe(false);
+      expect(result.categorizationTriggered).toBe(true);
+      expect(result.postProcessing.categorizationSuggestions).toBeGreaterThanOrEqual(0);
+      expect(result.postProcessing.pendingItemsCreated).toBeGreaterThanOrEqual(1);
+      expect(result.postProcessing.recurrenceSuggestionsCreated).toBeGreaterThanOrEqual(0);
 
       await expect(
         prisma.bankImport.findUniqueOrThrow({
@@ -153,14 +211,75 @@ describe("Itaú import persistence integration", () => {
           },
         }),
       ).resolves.toBe(1);
+      await expect(
+        prisma.pendingItem.count({
+          where: {
+            companyId: graph.company.id,
+            type: "uncategorized_transaction",
+          },
+        }),
+      ).resolves.toBeGreaterThanOrEqual(1);
     } finally {
       await cleanup([graph.company.id], [graph.user.id]);
     }
-  });
+  }, 15000);
+
+  it("runs post-import categorization, pending generation and recurrence detection automatically", async () => {
+    const graph = await createImportGraph(Role.accountant);
+    try {
+      await seedFixtureCategorization(graph.company.id);
+
+      const result = await runImport({
+        companyId: graph.company.id,
+        bankAccountId: graph.bankAccount.id,
+        uploadedByUserId: graph.user.id,
+        filePath: xlsFixture,
+        originalFileName: "Extrato Conta Corrente-200620262150.xls",
+      });
+
+      expect(result.transactionsCreated).toBe(36);
+      expect(result.postProcessing.categorizedTransactions).toBeGreaterThanOrEqual(2);
+      expect(result.postProcessing.categorizationSuggestions).toBeGreaterThanOrEqual(2);
+      expect(result.postProcessing.pendingItemsCreated).toBeGreaterThanOrEqual(1);
+      expect(result.postProcessing.recurrenceSuggestionsCreated).toBeGreaterThanOrEqual(1);
+      expect(result.postProcessing.recurrenceApprovalPendingsCreated).toBeGreaterThanOrEqual(1);
+
+      await expect(
+        prisma.categorizationSuggestion.count({
+          where: { companyId: graph.company.id },
+        }),
+      ).resolves.toBeGreaterThanOrEqual(2);
+      await expect(
+        prisma.pendingItem.count({
+          where: {
+            companyId: graph.company.id,
+            type: { in: ["categorization_review", "categorization_low_confidence", "categorization_conflict", "uncategorized_transaction"] },
+          },
+        }),
+      ).resolves.toBeGreaterThanOrEqual(1);
+      await expect(
+        prisma.recurrenceSuggestion.count({
+          where: { companyId: graph.company.id },
+        }),
+      ).resolves.toBeGreaterThanOrEqual(1);
+      await expect(
+        prisma.pendingItem.count({
+          where: {
+            companyId: graph.company.id,
+            type: "recurrence_approval",
+            status: { in: ["open", "in_review"] },
+          },
+        }),
+      ).resolves.toBeGreaterThanOrEqual(1);
+    } finally {
+      await cleanup([graph.company.id], [graph.user.id]);
+    }
+  }, 15000);
 
   it("does not duplicate Transactions when the same XLS is imported again", async () => {
     const graph = await createImportGraph(Role.accountant);
     try {
+      await seedFixtureCategorization(graph.company.id);
       await runImport({
         companyId: graph.company.id,
         bankAccountId: graph.bankAccount.id,
@@ -178,6 +297,11 @@ describe("Itaú import persistence integration", () => {
 
       expect(second.transactionsCreated).toBe(0);
       expect(second.duplicatesSkipped).toBe(36);
+      expect(second.postProcessing.categorizationSuggestions).toBe(0);
+      expect(second.postProcessing.pendingItemsCreated).toBe(0);
+      expect(second.postProcessing.duplicateCandidatesCreated).toBe(0);
+      expect(second.postProcessing.recurrenceSuggestionsCreated).toBe(0);
+      expect(second.postProcessing.recurrenceApprovalPendingsCreated).toBe(0);
       await expect(
         prisma.transaction.count({ where: { companyId: graph.company.id } }),
       ).resolves.toBe(36);
@@ -186,6 +310,9 @@ describe("Itaú import persistence integration", () => {
           where: { companyId: graph.company.id, status: "duplicate" },
         }),
       ).resolves.toBe(36);
+      await expect(
+        prisma.recurrenceSuggestion.count({ where: { companyId: graph.company.id } }),
+      ).resolves.toBeGreaterThanOrEqual(1);
     } finally {
       await cleanup([graph.company.id], [graph.user.id]);
     }

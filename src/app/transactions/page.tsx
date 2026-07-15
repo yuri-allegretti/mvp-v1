@@ -7,7 +7,8 @@ export default async function TransactionsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { demoContext, currentUser, currentUserId } = await getDemoPageData(searchParams);
+  const { demoContext, currentUser, currentUserId, currentCompanyId, currentBankAccountId } =
+    await getDemoPageData(searchParams);
   const companyId = demoContext.company?.id;
   const companyName = demoContext.company?.name ?? "Empresa demo indisponível";
   const transactions = companyId ? await listRecentTransactions(companyId, undefined, 80) : [];
@@ -16,9 +17,13 @@ export default async function TransactionsPage({
     <DemoShell
       currentPath="/transactions"
       currentUserId={currentUserId}
+      currentCompanyId={currentCompanyId ?? ""}
+      currentBankAccountId={currentBankAccountId}
       companyName={companyName}
       userRoleLabel={currentUser?.role ?? "indefinido"}
       users={demoContext.users}
+      companies={demoContext.companies}
+      bankAccounts={demoContext.bankAccounts}
       title="Transações"
       description="Últimas transações canônicas estruturadas no MVP."
     >

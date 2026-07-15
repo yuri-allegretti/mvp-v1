@@ -1,6 +1,11 @@
 import path from "node:path";
+import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
 import { importBankStatement } from "../src/modules/import";
+import { deduplicateImportedTransactions } from "../src/modules/import/core/deduplication/deduplicateImportedTransactions";
+import { generateExternalId } from "../src/modules/import/core/deduplication/generateExternalId";
+import { parseItauSpreadsheet } from "../src/modules/import/core/parsers/itauXlsxParser";
+import type { ImportedBankTransaction } from "../src/modules/import/core/types";
 
 const fixturesDirectory = path.join(process.cwd(), "tests", "fixtures", "import");
 const xlsFixture = path.join(fixturesDirectory, "Extrato Conta Corrente-200620262150.xls");
@@ -16,6 +21,68 @@ function importFixture(filePath: string, sourceFileId: string) {
 }
 
 describe("Itaú import core", () => {
+  it("marks rows with FUTURO origin as future transactions", () => {
+    const workbook = XLSX.utils.book_new();
+    const rows = [
+      ["ITAU EMPRESAS"],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      ["DATA", "LANCAMENTO", "AG./ORIGEM", "VALOR (R$)", "SALDO (R$)"],
+      ["24/02/2025", "LANCAMENTO FUTURO TESTE", "FUTURO", -920, 1000],
+    ];
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet(rows),
+      "Lancamentos",
+    );
+
+    const parsed = parseItauSpreadsheet(
+      XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }),
+      "xlsx",
+    );
+
+    expect(parsed.lines).toHaveLength(1);
+    expect(parsed.lines[0]?.disposition).toBe("future");
+    expect(parsed.lines[0]?.reasonCode).toBe("FUTURE_TRANSACTION_SKIPPED");
+  });
+
+  it("deduplicates exact rows by their base identity but keeps probable duplicates", () => {
+    const identity = {
+      companyId: "company_1",
+      bankAccountId: "account_1",
+      date: "2025-01-08",
+      amount: -9500,
+      description: "DEB AUTO ALUGUEL HUB TECNICO",
+    };
+    const transaction = (occurrenceIndex: number): ImportedBankTransaction => ({
+      ...identity,
+      source: "itau_xlsx",
+      sourceFileId: "fixture",
+      type: "expense",
+      externalId: generateExternalId({ ...identity, occurrenceIndex }),
+    });
+    const exactResult = deduplicateImportedTransactions([transaction(1), transaction(2)]);
+    expect(exactResult.transactions).toHaveLength(1);
+    expect(exactResult.duplicates).toHaveLength(1);
+
+    const probable = transaction(1);
+    probable.date = "2025-01-09";
+    probable.description = "PIX ALUGUEL HUB TECNICO";
+    probable.externalId = generateExternalId({
+      ...identity,
+      date: probable.date,
+      description: probable.description,
+    });
+    const probableResult = deduplicateImportedTransactions([transaction(1), probable]);
+    expect(probableResult.transactions).toHaveLength(2);
+    expect(probableResult.duplicates).toHaveLength(0);
+  });
+
   it("imports the validated XLS fixture as 36 canonical transactions", async () => {
     const result = await importFixture(xlsFixture, "xls-import-1");
 

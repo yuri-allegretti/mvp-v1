@@ -44,6 +44,12 @@ export function ImportUploadForm({
       const payload = (await response.json().catch(() => ({}))) as {
         transactionsCreated?: number;
         duplicatesSkipped?: number;
+        postProcessing?: {
+          categorizationSuggestions?: number;
+          pendingItemsCreated?: number;
+          recurrenceSuggestionsCreated?: number;
+          recurrenceApprovalPendingsCreated?: number;
+        };
         message?: string;
         error?: string;
       };
@@ -52,7 +58,7 @@ export function ImportUploadForm({
         return;
       }
       setMessage(
-        `Importação concluída: ${payload.transactionsCreated ?? 0} novas transações, ${payload.duplicatesSkipped ?? 0} duplicatas.`,
+        `Importação concluída: ${payload.transactionsCreated ?? 0} novas transações, ${payload.duplicatesSkipped ?? 0} duplicatas, ${payload.postProcessing?.categorizationSuggestions ?? 0} sugestões de categorização, ${payload.postProcessing?.pendingItemsCreated ?? 0} pendências, ${payload.postProcessing?.recurrenceSuggestionsCreated ?? 0} sugestões de recorrência e ${payload.postProcessing?.recurrenceApprovalPendingsCreated ?? 0} pendências de recorrência.`,
       );
       event.currentTarget.reset();
       router.refresh();
@@ -70,7 +76,7 @@ export function ImportUploadForm({
         </button>
       </div>
       <div className="hint">
-        Para a demo, use o fixture em <code>tests/fixtures/import/Extrato Conta Corrente-200620262150.xls</code>.
+        Para a demo consolidada, use os arquivos em <code>demo-fixtures/</code>, começando por <code>01-itau-demo-principal.xlsx</code>.
       </div>
       {error ? <div className="error-text">{error}</div> : null}
       {message ? <div className="success-text">{message}</div> : null}

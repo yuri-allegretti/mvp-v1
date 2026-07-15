@@ -1,4 +1,4 @@
-import { DomainInvariantError, NotFoundError } from "../domain/errors.js";
+import { DomainInvariantError, NotFoundError } from "../domain/errors";
 import {
   categoryAcceptsTransaction,
   type CategoryRecord,
@@ -7,9 +7,9 @@ import {
   type JsonObject,
   type SuggestionStatus,
   type TransactionRecord,
-} from "../domain/models.js";
-import type { CategorizationStore } from "../ports/categorization-store.js";
-import { AuditService } from "./audit-service.js";
+} from "../domain/models";
+import type { CategorizationStore } from "../ports/categorization-store";
+import { AuditService } from "./audit-service";
 
 export class CategorizationDecisionService {
   constructor(

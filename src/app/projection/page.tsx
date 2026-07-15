@@ -8,26 +8,36 @@ export default async function ProjectionPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { demoContext, currentUser, currentUserId } = await getDemoPageData(searchParams);
+  const { demoContext, currentUser, currentUserId, currentCompanyId, currentBankAccountId } =
+    await getDemoPageData(searchParams);
   const companyId = demoContext.company?.id;
   const companyName = demoContext.company?.name ?? "Empresa demo indisponível";
   const projection = companyId ? await getProjectionForDemo(companyId) : null;
 
   const tables = projection
-    ? ([
-        [30, projection.horizons[30]],
-        [60, projection.horizons[60]],
-        [90, projection.horizons[90]],
-      ] as const)
+    ? ([[
+        30,
+        projection.horizons[30],
+      ], [
+        60,
+        projection.horizons[60],
+      ], [
+        90,
+        projection.horizons[90],
+      ]] as const)
     : [];
 
   return (
     <DemoShell
       currentPath="/projection"
       currentUserId={currentUserId}
+      currentCompanyId={currentCompanyId ?? ""}
+      currentBankAccountId={currentBankAccountId}
       companyName={companyName}
       userRoleLabel={currentUser?.role ?? "indefinido"}
       users={demoContext.users}
+      companies={demoContext.companies}
+      bankAccounts={demoContext.bankAccounts}
       title="Projeção"
       description="Itens projetados a partir de ApprovedRecurrence ativa."
     >

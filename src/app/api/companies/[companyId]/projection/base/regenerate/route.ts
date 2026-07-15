@@ -9,7 +9,7 @@ interface RouteParams {
 
 export async function POST(
   request: Request,
-  context: { params: RouteParams | Promise<RouteParams> },
+  context: { params: Promise<RouteParams> },
 ) {
   try {
     const { companyId } = await context.params;

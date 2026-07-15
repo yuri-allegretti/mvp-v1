@@ -5,8 +5,8 @@ import type {
   SuggestionCandidate,
   SuggestionOrigin,
   TransactionRecord,
-} from "../domain/models.js";
-import { normalizeText, normalizeTransaction } from "../domain/normalization.js";
+} from "../domain/models";
+import { normalizeText, normalizeTransaction } from "../domain/normalization";
 
 interface RuleMatch {
   rule: CategorizationRuleRecord;

@@ -3,10 +3,10 @@ import type {
   JsonObject,
   PendingItemRecord,
   TransactionRecord,
-} from "../domain/models.js";
-import { PendingTypes } from "../domain/models.js";
-import type { CategorizationStore, CreatePendingInput } from "../ports/categorization-store.js";
-import { AuditService } from "./audit-service.js";
+} from "../domain/models";
+import { PendingTypes } from "../domain/models";
+import type { CategorizationStore, CreatePendingInput } from "../ports/categorization-store";
+import { AuditService } from "./audit-service";
 
 export class PendingGenerationService {
   constructor(

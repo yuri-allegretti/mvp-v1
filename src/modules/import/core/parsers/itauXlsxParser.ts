@@ -155,14 +155,16 @@ export function parseItauSpreadsheet(
 
     const rawAmount = row[columns.amount];
     const rawBalance = columns.balance === undefined ? undefined : row[columns.balance];
+    const rawOrigin = columns.origin === undefined ? undefined : row[columns.origin];
+    const origin = normalizeControlText(rawOrigin);
     const sourceRowNumber = rowIndex + 1;
     const rawData: Record<string, unknown> = {
       sheetName: selectedSheetName,
       cells: row,
-      ...(columns.origin !== undefined ? { origin: row[columns.origin] } : {}),
+      ...(columns.origin !== undefined ? { origin: rawOrigin } : {}),
     };
 
-    if (state === "future") {
+    if (state === "future" || origin === "FUTURO" || origin === "FUTURE") {
       lines.push({
         sourceRowNumber,
         rawDate,

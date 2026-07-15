@@ -8,19 +8,26 @@ export default async function ImportPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { demoContext, currentUser, currentUserId } = await getDemoPageData(searchParams);
+  const { demoContext, currentUser, currentUserId, currentCompanyId, currentBankAccountId } =
+    await getDemoPageData(searchParams);
   const companyId = demoContext.company?.id;
   const bankAccountId = demoContext.bankAccount?.id;
   const companyName = demoContext.company?.name ?? "Empresa demo indisponível";
-  const latestImport = companyId ? await getLatestBankImport(companyId) : null;
+  const latestImport = companyId
+    ? await getLatestBankImport(companyId, bankAccountId ?? undefined)
+    : null;
 
   return (
     <DemoShell
       currentPath="/import"
       currentUserId={currentUserId}
+      currentCompanyId={currentCompanyId ?? ""}
+      currentBankAccountId={currentBankAccountId}
       companyName={companyName}
       userRoleLabel={currentUser?.role ?? "indefinido"}
       users={demoContext.users}
+      companies={demoContext.companies}
+      bankAccounts={demoContext.bankAccounts}
       title="Importação"
       description="Upload manual de extrato ou visualização do último processamento."
     >
@@ -35,7 +42,7 @@ export default async function ImportPage({
         <section className="table-card">
           <h3>Última importação</h3>
           {!latestImport ? (
-            <p className="hint">Nenhuma importação encontrada para a empresa demo.</p>
+            <p className="hint">Nenhuma importação encontrada para a conta selecionada.</p>
           ) : (
             <table className="table">
               <tbody>

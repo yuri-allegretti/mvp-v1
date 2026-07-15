@@ -22,7 +22,8 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -134,6 +135,10 @@ select {
   gap: 16px;
 }
 
+.stack.compact {
+  gap: 8px;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -189,6 +194,21 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.field {
+  min-width: 180px;
+  border: 1px solid #c5d0db;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #ffffff;
 }
 
 .button,

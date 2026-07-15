@@ -1,6 +1,6 @@
-import { DomainInvariantError } from "../domain/errors.js";
-import type { AuditEventRecord } from "../domain/models.js";
-import type { AuditEventDraft, CategorizationStore } from "../ports/categorization-store.js";
+import { DomainInvariantError } from "../domain/errors";
+import type { AuditEventRecord } from "../domain/models";
+import type { AuditEventDraft, CategorizationStore } from "../ports/categorization-store";
 
 export class AuditService {
   constructor(private readonly store: CategorizationStore) {}

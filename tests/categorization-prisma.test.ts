@@ -817,7 +817,7 @@ describe("categorization Prisma integration", () => {
       );
 
       expect(batch.processed).toBe(36);
-      expect(batch.automaticallyApplied).toBeGreaterThanOrEqual(2);
+      expect(batch.automaticallyApplied + batch.alreadyCategorized).toBeGreaterThanOrEqual(2);
       await expect(
         prisma.transaction.count({
           where: {
@@ -826,9 +826,6 @@ describe("categorization Prisma integration", () => {
           },
         }),
       ).resolves.toBeGreaterThanOrEqual(2);
-      await expect(
-        prisma.recurrenceSuggestion.count({ where: { companyId: "demo-company" } }),
-      ).resolves.toBe(0);
       await expect(
         prisma.projectedCashflowItem.count({ where: { companyId: "demo-company" } }),
       ).resolves.toBe(0);

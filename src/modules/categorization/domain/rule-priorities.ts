@@ -1,4 +1,4 @@
-import type { RuleSource, RuleType } from "./models.js";
+import type { RuleSource, RuleType } from "./models";
 
 /**
  * Defaults used when rules are created. Evaluation always uses the persisted

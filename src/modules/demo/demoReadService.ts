@@ -178,10 +178,14 @@ export async function getProjectionForDemo(
 
 export function getLatestBankImport(
   companyId: string,
+  bankAccountId?: string,
   client: PrismaClient = prisma,
 ) {
   return client.bankImport.findFirst({
-    where: { companyId },
+    where: {
+      companyId,
+      ...(bankAccountId ? { bankAccountId } : {}),
+    },
     orderBy: [{ createdAt: "desc" }],
     include: {
       uploadedFile: {

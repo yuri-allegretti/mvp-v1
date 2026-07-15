@@ -1,4 +1,6 @@
 import {
+  CategorizationRuleSource,
+  CategorizationRuleType,
   ExpectedTransactionType,
   ImportSource,
   PendingSeverity,
@@ -297,6 +299,167 @@ describe("schema integrity and constraints", () => {
         recurrenceSuggestionId: recurrenceSuggestion.id,
         duplicateCandidateId: duplicate.id,
       });
+    });
+  });
+
+  it("loads CategorizationSuggestion with its main relations without Prisma errors", async () => {
+    await rollbackingTest(async (tx, suffix) => {
+      const { company, category, transaction } = await createCompanyGraph(tx, suffix);
+      const rule = await tx.categorizationRule.create({
+        data: {
+          id: `rule-${suffix}`,
+          companyId: company.id,
+          categoryId: category.id,
+          ruleType: CategorizationRuleType.counterparty_contains,
+          conditions: { value: "FORNECEDOR" },
+          priority: 100,
+          confidence: 80,
+          source: CategorizationRuleSource.manual,
+        },
+      });
+      const suggestion = await tx.categorizationSuggestion.create({
+        data: {
+          id: `suggestion-${suffix}`,
+          companyId: company.id,
+          transactionId: transaction.id,
+          suggestedCategoryId: category.id,
+          ruleId: rule.id,
+          evaluationId: `evaluation-${suffix}`,
+          deduplicationKey: `suggestion-dedup-${suffix}`,
+          score: 81,
+          confidenceBand: "medium",
+          origin: "manual_rule",
+          explanation: "Rule matched",
+          evidence: {},
+          engineVersion: "test",
+        },
+      });
+      await tx.pendingItem.create({
+        data: {
+          companyId: company.id,
+          type: "categorization_review",
+          severity: PendingSeverity.medium,
+          transactionId: transaction.id,
+          suggestionId: suggestion.id,
+          deduplicationKey: `pending-dedup-${suffix}`,
+          title: "Review suggestion",
+          description: "Review",
+          metadata: {},
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          companyId: company.id,
+          entityType: "CategorizationSuggestion",
+          entityId: suggestion.id,
+          action: "pending.created",
+          suggestionId: suggestion.id,
+          transactionId: transaction.id,
+          ruleId: rule.id,
+          metadata: {},
+        },
+      });
+
+      await expect(
+        tx.categorizationSuggestion.findMany({
+          where: { companyId: company.id },
+          include: {
+            company: true,
+            transaction: true,
+            suggestedCategory: true,
+            rule: true,
+            pendingItems: true,
+            auditEvents: true,
+          },
+        }),
+      ).resolves.toHaveLength(1);
+    });
+  });
+
+  it("does not leave categorization, pending or audit orphans inside the same company graph", async () => {
+    await rollbackingTest(async (tx, suffix) => {
+      const { company, category, transaction } = await createCompanyGraph(tx, suffix);
+      const suggestion = await tx.categorizationSuggestion.create({
+        data: {
+          id: `suggestion-orphan-${suffix}`,
+          companyId: company.id,
+          transactionId: transaction.id,
+          suggestedCategoryId: category.id,
+          evaluationId: `evaluation-orphan-${suffix}`,
+          deduplicationKey: `suggestion-orphan-dedup-${suffix}`,
+          score: 75,
+          confidenceBand: "medium",
+          origin: "manual_rule",
+          explanation: "Rule matched",
+          evidence: {},
+          engineVersion: "test",
+        },
+      });
+      await tx.pendingItem.create({
+        data: {
+          companyId: company.id,
+          type: "categorization_review",
+          severity: PendingSeverity.medium,
+          transactionId: transaction.id,
+          suggestionId: suggestion.id,
+          deduplicationKey: `pending-orphan-dedup-${suffix}`,
+          title: "Review suggestion",
+          description: "Review",
+          metadata: {},
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          companyId: company.id,
+          entityType: "CategorizationSuggestion",
+          entityId: suggestion.id,
+          action: "categorization.suggestion_accepted",
+          suggestionId: suggestion.id,
+          transactionId: transaction.id,
+          metadata: {},
+        },
+      });
+
+      const [
+        suggestionTransactionOrphans,
+        suggestionCategoryOrphans,
+        pendingSuggestionOrphans,
+        auditSuggestionOrphans,
+      ] = await Promise.all([
+        tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS count
+          FROM "CategorizationSuggestion" cs
+          LEFT JOIN "Transaction" t
+            ON t.id = cs."transactionId" AND t."companyId" = cs."companyId"
+          WHERE cs."companyId" = ${company.id} AND t.id IS NULL
+        `,
+        tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS count
+          FROM "CategorizationSuggestion" cs
+          LEFT JOIN "Category" c
+            ON c.id = cs."suggestedCategoryId" AND c."companyId" = cs."companyId"
+          WHERE cs."companyId" = ${company.id} AND c.id IS NULL
+        `,
+        tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS count
+          FROM "PendingItem" p
+          LEFT JOIN "CategorizationSuggestion" cs
+            ON cs.id = p."suggestionId" AND cs."companyId" = p."companyId"
+          WHERE p."companyId" = ${company.id} AND p."suggestionId" IS NOT NULL AND cs.id IS NULL
+        `,
+        tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS count
+          FROM "AuditEvent" a
+          LEFT JOIN "CategorizationSuggestion" cs
+            ON cs.id = a."suggestionId" AND cs."companyId" = a."companyId"
+          WHERE a."companyId" = ${company.id} AND a."suggestionId" IS NOT NULL AND cs.id IS NULL
+        `,
+      ]);
+
+      expect(Number(suggestionTransactionOrphans[0]?.count ?? 0n)).toBe(0);
+      expect(Number(suggestionCategoryOrphans[0]?.count ?? 0n)).toBe(0);
+      expect(Number(pendingSuggestionOrphans[0]?.count ?? 0n)).toBe(0);
+      expect(Number(auditSuggestionOrphans[0]?.count ?? 0n)).toBe(0);
     });
   });
 

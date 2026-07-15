@@ -301,6 +301,247 @@ describe("recurrence detection workflow", () => {
     }
   });
 
+  it("reactivates an equivalent superseded suggestion instead of creating another row", async () => {
+    const graph = await createGraph();
+    try {
+      await createMonthlyNetflixSeries(graph);
+      const first = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+      const suggestion = first.suggestions[0];
+      if (!suggestion) throw new Error("Expected recurrence suggestion");
+
+      await prisma.pendingItem.updateMany({
+        where: { companyId: graph.companyId, recurrenceSuggestionId: suggestion.id },
+        data: { status: "dismissed", resolvedAt: new Date() },
+      });
+      await prisma.recurrenceSuggestion.update({
+        where: { id_companyId: { id: suggestion.id, companyId: graph.companyId } },
+        data: { status: "superseded" },
+      });
+
+      const rerun = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+
+      expect(rerun.suggestionsCreated).toBe(0);
+      expect(rerun.pendingCreated).toBe(1);
+      expect(rerun.suggestions[0]).toMatchObject({ id: suggestion.id, status: "pending" });
+      await expect(
+        prisma.recurrenceSuggestion.count({ where: { companyId: graph.companyId } }),
+      ).resolves.toBe(first.suggestionsCreated);
+    } finally {
+      await cleanup([graph.companyId], [graph.userId]);
+    }
+  });
+
+  it("keeps an actionable canonical instead of oscillating to superseded history", async () => {
+    const graph = await createGraph();
+    try {
+      const transactions = await createMonthlyNetflixSeries(graph);
+      const first = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+      const active = first.suggestions[0];
+      if (!active) throw new Error("Expected recurrence suggestion");
+      const historical = await prisma.recurrenceSuggestion.create({
+        data: {
+          companyId: graph.companyId,
+          categoryId: active.categoryId,
+          type: active.type,
+          representativeDescription: active.representativeDescription,
+          normalizedDescription: active.normalizedDescription,
+          frequency: active.frequency,
+          recurrenceType: active.recurrenceType,
+          patternKind: active.patternKind,
+          averageAmount: active.averageAmount,
+          estimatedNextAmount: active.estimatedNextAmount,
+          amountVariationPercent: active.amountVariationPercent,
+          expectedNextDate: active.expectedNextDate,
+          confidenceScore: 100,
+          status: "superseded",
+          evidence: active.evidence as Prisma.InputJsonValue,
+          startDate: active.startDate,
+          endDate: active.endDate,
+          installmentCount: active.installmentCount,
+          deduplicationKey: `historical-${crypto.randomUUID()}`,
+        },
+      });
+      await prisma.recurrenceSuggestionTransaction.createMany({
+        data: transactions.map((transaction) => ({
+          companyId: graph.companyId,
+          recurrenceSuggestionId: historical.id,
+          transactionId: transaction.id,
+        })),
+      });
+
+      const rerun = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+
+      expect(rerun.suggestionsCreated).toBe(0);
+      expect(rerun.pendingCreated).toBe(0);
+      expect(rerun.suggestions[0]?.id).toBe(active.id);
+      await expect(
+        prisma.recurrenceSuggestion.findUniqueOrThrow({
+          where: { id_companyId: { id: historical.id, companyId: graph.companyId } },
+        }),
+      ).resolves.toMatchObject({ status: "superseded" });
+    } finally {
+      await cleanup([graph.companyId], [graph.userId]);
+    }
+  });
+
+  it("uses a deterministic collision key when the logical base key belongs to another group", async () => {
+    const graph = await createGraph();
+    try {
+      await createMonthlyNetflixSeries(graph);
+      const first = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+      const original = first.suggestions[0];
+      if (!original) throw new Error("Expected recurrence suggestion");
+
+      await prisma.auditEvent.deleteMany({
+        where: { companyId: graph.companyId, recurrenceSuggestionId: original.id },
+      });
+      await prisma.pendingItem.deleteMany({
+        where: { companyId: graph.companyId, recurrenceSuggestionId: original.id },
+      });
+      await prisma.recurrenceSuggestionTransaction.deleteMany({
+        where: { companyId: graph.companyId, recurrenceSuggestionId: original.id },
+      });
+      await prisma.recurrenceSuggestion.delete({
+        where: { id_companyId: { id: original.id, companyId: graph.companyId } },
+      });
+      await prisma.recurrenceSuggestion.create({
+        data: {
+          id: `occupied-${crypto.randomUUID()}`,
+          companyId: graph.companyId,
+          categoryId: original.categoryId,
+          type: original.type,
+          representativeDescription: "UNRELATED HISTORICAL GROUP",
+          normalizedDescription: "unrelated historical group",
+          frequency: original.frequency,
+          recurrenceType: original.recurrenceType,
+          patternKind: original.patternKind,
+          averageAmount: original.averageAmount,
+          estimatedNextAmount: original.estimatedNextAmount,
+          amountVariationPercent: original.amountVariationPercent,
+          expectedNextDate: original.expectedNextDate,
+          confidenceScore: original.confidenceScore,
+          status: "superseded",
+          evidence: original.evidence as Prisma.InputJsonValue,
+          startDate: original.startDate,
+          endDate: original.endDate,
+          installmentCount: original.installmentCount,
+          deduplicationKey: original.deduplicationKey,
+        },
+      });
+
+      const rerun = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+      const replacement = rerun.suggestions[0];
+
+      expect(rerun.suggestionsCreated).toBe(1);
+      expect(replacement?.deduplicationKey).not.toBe(original.deduplicationKey);
+      expect(replacement?.deduplicationKey.startsWith(`${original.deduplicationKey}:`)).toBe(true);
+      await expect(
+        prisma.pendingItem.count({
+          where: {
+            companyId: graph.companyId,
+            type: recurrenceApprovalType,
+            status: { in: ["open", "in_review"] },
+          },
+        }),
+      ).resolves.toBe(1);
+    } finally {
+      await cleanup([graph.companyId], [graph.userId]);
+    }
+  });
+
+  it("updates the same actionable suggestion when a later month is imported", async () => {
+    const graph = await createGraph();
+    try {
+      const series = await createMonthlyNetflixSeries(graph);
+      await prisma.transaction.delete({ where: { id_companyId: { id: series[3]!.id, companyId: graph.companyId } } });
+      const first = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+      const firstSuggestion = first.suggestions[0];
+      if (!firstSuggestion) throw new Error("Expected initial recurrence suggestion");
+
+      await createTransaction(graph, {
+        id: `${graph.companyId}-n4`,
+        date: "2026-04-05",
+        description: "COMPRA NETFLIX.COM",
+        externalId: `${graph.companyId}-ext-n4`,
+      });
+      const second = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+
+      expect(second.suggestionsCreated).toBe(0);
+      expect(second.pendingCreated).toBe(0);
+      expect(second.suggestions[0]?.id).toBe(firstSuggestion.id);
+      await expect(
+        prisma.recurrenceSuggestionTransaction.count({
+          where: { companyId: graph.companyId, recurrenceSuggestionId: firstSuggestion.id },
+        }),
+      ).resolves.toBe(4);
+      await expect(
+        prisma.pendingItem.count({
+          where: {
+            companyId: graph.companyId,
+            type: recurrenceApprovalType,
+            status: { in: ["open", "in_review"] },
+          },
+        }),
+      ).resolves.toBe(1);
+    } finally {
+      await cleanup([graph.companyId], [graph.userId]);
+    }
+  });
+
+  it("does not replace an approved recurrence when new evidence arrives", async () => {
+    const graph = await createGraph();
+    try {
+      const series = await createMonthlyNetflixSeries(graph);
+      await prisma.transaction.delete({ where: { id_companyId: { id: series[3]!.id, companyId: graph.companyId } } });
+      const first = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+      const suggestion = first.suggestions[0];
+      if (!suggestion) throw new Error("Expected initial recurrence suggestion");
+      await prisma.recurrenceSuggestion.update({
+        where: { id_companyId: { id: suggestion.id, companyId: graph.companyId } },
+        data: { status: "approved" },
+      });
+      const approved = await prisma.approvedRecurrence.create({
+        data: {
+          companyId: graph.companyId,
+          recurrenceSuggestionId: suggestion.id,
+          type: suggestion.type,
+          description: suggestion.representativeDescription,
+          frequency: suggestion.frequency,
+          recurrenceType: suggestion.recurrenceType,
+          estimatedAmount: suggestion.estimatedNextAmount,
+          startDate: suggestion.startDate,
+          status: "active",
+        },
+      });
+
+      await createTransaction(graph, {
+        id: `${graph.companyId}-n4`,
+        date: "2026-04-05",
+        description: "COMPRA NETFLIX.COM",
+        externalId: `${graph.companyId}-ext-n4`,
+      });
+      const second = await detectRecurrenceSuggestionsForCompany({ companyId: graph.companyId }, prisma);
+
+      expect(second.suggestionsCreated).toBe(0);
+      await expect(
+        prisma.approvedRecurrence.findUniqueOrThrow({
+          where: { id_companyId: { id: approved.id, companyId: graph.companyId } },
+        }),
+      ).resolves.toMatchObject({ status: "active", recurrenceSuggestionId: suggestion.id });
+      await expect(
+        prisma.pendingItem.count({
+          where: {
+            companyId: graph.companyId,
+            type: recurrenceApprovalType,
+            status: { in: ["open", "in_review"] },
+          },
+        }),
+      ).resolves.toBe(0);
+    } finally {
+      await cleanup([graph.companyId], [graph.userId]);
+    }
+  });
+
   it("creates recurrence approval pending items", async () => {
     const graph = await createGraph();
     try {

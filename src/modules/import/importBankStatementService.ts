@@ -7,6 +7,10 @@ import { prisma } from "../../lib/prisma";
 import { importAndPersistBankStatement } from "./core/importAndPersistBankStatement";
 import { PrismaImportPersistenceStore } from "./core/persistence/prismaImportPersistenceStore";
 import type { ImportAndPersistBankStatementResult } from "./core/importAndPersistBankStatement";
+import {
+  runPostImportProcessing,
+  type PostImportProcessingSummary,
+} from "./services/postImportProcessingWorkflow";
 
 export type BankImportIntegrationErrorCode =
   | "IMPORT_FORBIDDEN"
@@ -35,7 +39,8 @@ export interface ImportUploadedBankStatementParams {
 export interface ImportUploadedBankStatementResult
   extends ImportAndPersistBankStatementResult {
   uploadedFileId: string;
-  categorizationTriggered: false;
+  categorizationTriggered: true;
+  postProcessing: PostImportProcessingSummary;
 }
 
 async function assertCanImport(params: {
@@ -129,9 +134,20 @@ export async function importUploadedBankStatement(
     new PrismaImportPersistenceStore(client),
   );
 
+  const postProcessing = await runPostImportProcessing(
+    {
+      companyId: params.companyId,
+      bankAccountId: params.bankAccountId,
+      actorUserId: params.uploadedByUserId,
+      bankImportId: result.bankImportId,
+    },
+    client,
+  );
+
   return {
     ...result,
     uploadedFileId: uploadedFile.id,
-    categorizationTriggered: false,
+    categorizationTriggered: true,
+    postProcessing,
   };
 }

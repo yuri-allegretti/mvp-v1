@@ -15,6 +15,7 @@ import {
   areLogicalRecurrenceSuggestionsEquivalent,
   buildLogicalRecurrenceSuggestionCollisionKey,
   buildLogicalRecurrenceSuggestionKey,
+  compareRecurrenceSuggestionQuality,
   consolidateCoreRecurrenceSuggestions,
 } from "./recurrenceSuggestionConsolidation";
 
@@ -70,12 +71,33 @@ const suggestionRelations = {
 
 function existingAsCoreShape(existing: SuggestionWithTransactions): Pick<
   CoreRecurrenceSuggestion,
-  "companyId" | "type" | "frequency" | "patternKind" | "installmentCount" | "transactionIds"
+  | "id"
+  | "companyId"
+  | "type"
+  | "frequency"
+  | "recurrenceType"
+  | "patternKind"
+  | "installmentCount"
+  | "normalizedDescription"
+  | "representativeDescription"
+  | "averageAmount"
+  | "estimatedNextAmount"
+  | "amountVariationPercent"
+  | "confidenceScore"
+  | "transactionIds"
 > {
   return {
+    id: existing.id,
     companyId: existing.companyId,
     type: existing.type,
     frequency: existing.frequency,
+    recurrenceType: existing.recurrenceType,
+    normalizedDescription: existing.normalizedDescription,
+    representativeDescription: existing.representativeDescription,
+    averageAmount: Number(existing.averageAmount),
+    estimatedNextAmount: Number(existing.estimatedNextAmount),
+    amountVariationPercent: Number(existing.amountVariationPercent),
+    confidenceScore: existing.confidenceScore,
     ...(existing.patternKind ? { patternKind: existing.patternKind } : {}),
     ...(existing.installmentCount ? { installmentCount: existing.installmentCount } : {}),
     transactionIds: existing.transactions.map((relation) => relation.transactionId),
@@ -165,15 +187,14 @@ async function persistSuggestion(params: {
     where: { deduplicationKey: baseKey },
     include: suggestionRelations,
   });
-  const overlapping = await params.client.recurrenceSuggestion.findMany({
+  const candidates = await params.client.recurrenceSuggestion.findMany({
     where: {
       companyId: params.companyId,
       status: { in: ["pending", "edited", "approved", "superseded"] },
-      transactions: { some: { transactionId: { in: params.suggestion.transactionIds } } },
     },
     include: suggestionRelations,
   });
-  const equivalents = overlapping.filter((existing) =>
+  const equivalents = candidates.filter((existing) =>
     areLogicalRecurrenceSuggestionsEquivalent({
       left: params.suggestion,
       right: existingAsCoreShape(existing),
@@ -192,8 +213,11 @@ async function persistSuggestion(params: {
       (left, right) =>
         Number(right.status === "edited") - Number(left.status === "edited") ||
         Number(right.status !== "superseded") - Number(left.status !== "superseded") ||
-        right.transactions.length - left.transactions.length ||
-        right.confidenceScore - left.confidenceScore,
+        compareRecurrenceSuggestionQuality(
+          existingAsCoreShape(left) as CoreRecurrenceSuggestion,
+          existingAsCoreShape(right) as CoreRecurrenceSuggestion,
+          params.transactionsById,
+        ),
     )[0];
   const key =
     canonical?.deduplicationKey ??
@@ -210,13 +234,15 @@ async function persistSuggestion(params: {
       params.companyId,
       params.suggestion.categoryId,
     );
-    const isMoreComplete =
-      params.suggestion.transactionIds.length > canonical.transactions.length ||
-      (params.suggestion.transactionIds.length === canonical.transactions.length &&
-        params.suggestion.confidenceScore > canonical.confidenceScore);
+    const detectorCandidateIsBetter =
+      compareRecurrenceSuggestionQuality(
+        params.suggestion,
+        existingAsCoreShape(canonical) as CoreRecurrenceSuggestion,
+        params.transactionsById,
+      ) < 0;
     const shouldRefreshDetectorFields =
       (canonical.status === "pending" || canonical.status === "superseded") &&
-      isMoreComplete &&
+      detectorCandidateIsBetter &&
       canonical.approvedRecurrences.length === 0;
     persisted = await params.client.recurrenceSuggestion.update({
       where: { id_companyId: { id: canonical.id, companyId: params.companyId } },

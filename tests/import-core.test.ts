@@ -104,6 +104,18 @@ describe("Itaú import core", () => {
       expect(transaction.type).toBe(transaction.amount > 0 ? "income" : "expense");
       expect(transaction.externalId).toMatch(/^hash-v1:[a-f0-9]{64}$/);
     }
+
+    expect(
+      result.transactions.find((transaction) => transaction.description.startsWith("DA COPEL")),
+    ).toMatchObject({
+      counterpartyName: "COPEL",
+      documentNumber: "0000001778170",
+    });
+    expect(
+      result.transactions.find((transaction) =>
+        transaction.description.startsWith("CREDIARIO ITAU"),
+      ),
+    ).toMatchObject({ counterpartyName: "ITAU", documentNumber: "73955" });
   });
 
   it("imports the equivalent PDF fixture with the same externalIds as XLS", async () => {

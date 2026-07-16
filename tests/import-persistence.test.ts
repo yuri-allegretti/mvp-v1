@@ -203,6 +203,28 @@ describe("Itaú import persistence integration", () => {
         }),
       ).resolves.toBe(36);
       await expect(
+        prisma.transaction.findFirstOrThrow({
+          where: {
+            companyId: graph.company.id,
+            description: { startsWith: "DA COPEL" },
+          },
+        }),
+      ).resolves.toMatchObject({
+        counterpartyName: "COPEL",
+        documentNumber: "0000001778170",
+      });
+      await expect(
+        prisma.importedTransactionRaw.findFirstOrThrow({
+          where: {
+            companyId: graph.company.id,
+            description: { startsWith: "DA COPEL" },
+          },
+        }),
+      ).resolves.toMatchObject({
+        counterpartyName: "COPEL",
+        documentNumber: "0000001778170",
+      });
+      await expect(
         prisma.importIssue.count({
           where: {
             companyId: graph.company.id,

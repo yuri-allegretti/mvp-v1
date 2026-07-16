@@ -94,6 +94,158 @@ describe("recurrence suggestion consolidation", () => {
     expect(result).toHaveLength(2);
   });
 
+  it("keeps a coherent group instead of a lower-confidence contaminated superset", () => {
+    const transactionMap = transactions(["t1", "t2", "t3", "t4", "n1", "n2", "n3", "n4"]);
+    const result = consolidateCoreRecurrenceSuggestions(
+      [
+        suggestion({
+          id: "coherent",
+          transactionIds: ["t1", "t2", "t3", "t4"],
+          confidenceScore: 91,
+        }),
+        suggestion({
+          id: "contaminated",
+          transactionIds: ["t1", "t2", "t3", "t4", "n1", "n2", "n3", "n4"],
+          confidenceScore: 72,
+          recurrenceType: "variable",
+          patternKind: "monthly_variable",
+          amountVariationPercent: 80,
+        }),
+      ],
+      transactionMap,
+    );
+
+    expect(result.map((item) => item.id)).toEqual(["coherent"]);
+  });
+
+  it("consolidates recurring income cadence variants around the full history", () => {
+    const ids = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"];
+    const transactionMap = transactions(ids);
+    const recurringIncome = {
+      representativeDescription: "REPASSE CANAL DE VENDAS",
+      normalizedDescription: "receb repasse canal vendas",
+      recurrenceType: "variable" as const,
+      patternKind: "recurring_income" as const,
+      averageAmount: 18_000,
+      estimatedNextAmount: 18_000,
+      amountVariationPercent: 30,
+    };
+    const result = consolidateCoreRecurrenceSuggestions(
+      [
+        suggestion({
+          ...recurringIncome,
+          id: "full-weekly",
+          transactionIds: ids,
+          frequency: "weekly",
+          confidenceScore: 91,
+        }),
+        suggestion({
+          ...recurringIncome,
+          id: "monthly-a",
+          transactionIds: ids.slice(0, 4),
+          frequency: "monthly",
+          confidenceScore: 94,
+        }),
+        suggestion({
+          ...recurringIncome,
+          id: "monthly-b",
+          transactionIds: ids.slice(4),
+          frequency: "monthly",
+          confidenceScore: 94,
+        }),
+      ],
+      transactionMap,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("full-weekly");
+  });
+
+  it("does not let a bridge candidate collapse distinct economic groups", () => {
+    const transactionMap = transactions(["a1", "a2", "a3", "b1", "b2", "b3"]);
+    const result = consolidateCoreRecurrenceSuggestions(
+      [
+        suggestion({
+          id: "software",
+          transactionIds: ["a1", "a2", "a3"],
+          normalizedDescription: "assinatura software acme",
+          averageAmount: -500,
+          estimatedNextAmount: -500,
+          confidenceScore: 92,
+        }),
+        suggestion({
+          id: "accounting",
+          transactionIds: ["b1", "b2", "b3"],
+          normalizedDescription: "contabilidade beta",
+          averageAmount: -1_200,
+          estimatedNextAmount: -1_200,
+          confidenceScore: 91,
+        }),
+        suggestion({
+          id: "mixed-bridge",
+          transactionIds: ["a1", "a2", "a3", "b1", "b2", "b3"],
+          normalizedDescription: "assinatura software acme",
+          recurrenceType: "variable",
+          averageAmount: -850,
+          estimatedNextAmount: -850,
+          amountVariationPercent: 90,
+          confidenceScore: 70,
+        }),
+      ],
+      transactionMap,
+    );
+
+    expect(result.map((item) => item.id).sort()).toEqual(["accounting", "software"]);
+  });
+
+  it("never collapses income and expense suggestions", () => {
+    const transactionMap = transactions(["t1", "t2", "t3"]);
+    const result = consolidateCoreRecurrenceSuggestions(
+      [
+        suggestion({ id: "income", transactionIds: ["t1", "t2", "t3"], type: "income" }),
+        suggestion({ id: "expense", transactionIds: ["t1", "t2", "t3"], type: "expense" }),
+      ],
+      transactionMap,
+    );
+
+    expect(result).toHaveLength(2);
+  });
+
+  it("keeps different cadences from the same supplier separated", () => {
+    const transactionMap = transactions(["m1", "m2", "m3", "w1", "w2", "w3"]);
+    const result = consolidateCoreRecurrenceSuggestions(
+      [
+        suggestion({ id: "monthly", transactionIds: ["m1", "m2", "m3"] }),
+        suggestion({
+          id: "weekly",
+          transactionIds: ["w1", "w2", "w3"],
+          frequency: "weekly",
+          patternKind: "weekly_recurring",
+        }),
+      ],
+      transactionMap,
+    );
+
+    expect(result).toHaveLength(2);
+  });
+
+  it("does not make explicit internal transfers actionable", () => {
+    const transactionMap = transactions(["t1", "t2", "t3"]);
+    const result = consolidateCoreRecurrenceSuggestions(
+      [
+        suggestion({
+          id: "internal-transfer",
+          transactionIds: ["t1", "t2", "t3"],
+          representativeDescription: "TRANSFERENCIA INTERNA ENTRE CONTAS",
+          normalizedDescription: "interna entre contas empresa",
+        }),
+      ],
+      transactionMap,
+    );
+
+    expect(result).toEqual([]);
+  });
+
   it("keeps the logical key stable when later transactions are added", () => {
     const transactionMap = transactions(["t1", "t2", "t3", "t4"]);
     const first = suggestion({ id: "first", transactionIds: ["t1", "t2", "t3"] });

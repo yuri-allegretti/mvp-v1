@@ -11,6 +11,10 @@ import { prisma } from "../src/lib/prisma";
 import { transactionToRecurrenceInput } from "../src/modules/recurrences/adapters/transactionToRecurrenceInput";
 import { detectRecurrences } from "../src/modules/recurrences/core/service/recurrenceDetectionService.ts";
 import { consolidateCoreRecurrenceSuggestions } from "../src/modules/recurrences/services/recurrenceSuggestionConsolidation";
+import {
+  confidenceForPublishedRule,
+  publishedBroadCategorizationRules,
+} from "./support/published-categorization-rules";
 
 const baseUrl = "http://127.0.0.1:3000";
 const accountantId = "published-fixture-accountant";
@@ -182,6 +186,23 @@ async function seed(params: {
         priority -= 1;
       }
     }
+    let broadPriority = 900;
+    for (const [index, rule] of publishedBroadCategorizationRules.entries()) {
+      await prisma.categorizationRule.create({
+        data: {
+          id: `published-${company.id}-broad-${String(index + 1).padStart(3, "0")}`,
+          companyId: id,
+          categoryId: categoryId(company.id, rule.categoryId),
+          ruleType: CategorizationRuleType.description_contains,
+          conditions: { value: rule.pattern },
+          priority: broadPriority,
+          confidence: confidenceForPublishedRule(rule.behavior),
+          source: CategorizationRuleSource.manual,
+          status: CategorizationRuleStatus.active,
+        },
+      });
+      broadPriority -= 1;
+    }
   }
 }
 
@@ -314,9 +335,53 @@ async function main(): Promise<void> {
     categorizedTransactions: await prisma.transaction.count({
       where: { ...where, categoryId: { not: null } },
     }),
+    transactionsWithCounterparty: await prisma.transaction.count({
+      where: { ...where, counterpartyName: { not: null } },
+    }),
+    transactionsWithDocument: await prisma.transaction.count({
+      where: { ...where, documentNumber: { not: null } },
+    }),
+    activeCategorizationRules: await prisma.categorizationRule.count({
+      where: { ...where, status: "active" },
+    }),
     pendingItems: await prisma.pendingItem.count({ where }),
     actionablePendingItems: await prisma.pendingItem.count({
       where: { ...where, status: { in: ["open", "in_review"] } },
+    }),
+    uncategorizedPending: await prisma.pendingItem.count({
+      where: {
+        ...where,
+        type: "uncategorized_transaction",
+        status: { in: ["open", "in_review"] },
+      },
+    }),
+    categorizationReviewPending: await prisma.pendingItem.count({
+      where: {
+        ...where,
+        type: "categorization_review",
+        status: { in: ["open", "in_review"] },
+      },
+    }),
+    categorizationLowConfidencePending: await prisma.pendingItem.count({
+      where: {
+        ...where,
+        type: "categorization_low_confidence",
+        status: { in: ["open", "in_review"] },
+      },
+    }),
+    categorizationConflictPending: await prisma.pendingItem.count({
+      where: {
+        ...where,
+        type: "categorization_conflict",
+        status: { in: ["open", "in_review"] },
+      },
+    }),
+    possibleDuplicatePending: await prisma.pendingItem.count({
+      where: {
+        ...where,
+        type: "possible_duplicate",
+        status: { in: ["open", "in_review"] },
+      },
     }),
     recurrenceSuggestions: await prisma.recurrenceSuggestion.count({ where }),
     actionableRecurrenceSuggestions: await prisma.recurrenceSuggestion.count({
@@ -381,6 +446,14 @@ async function main(): Promise<void> {
       database.actionableRecurrenceSuggestionsWithoutPending === 0 &&
       database.nonActionableRecurrenceSuggestionsWithPending === 0,
   };
+  const categorizationValidation = {
+    broadRulesPerCompany: publishedBroadCategorizationRules.length,
+    activeRulesPerCompany: database.activeCategorizationRules / companies.length,
+    uncategorizedBelow250: database.uncategorizedPending < 250,
+    uncategorizedReductionPercent: Number(
+      (((1067 - database.uncategorizedPending) / 1067) * 100).toFixed(1),
+    ),
+  };
   const mismatches = results.filter(
     (result) => result.status !== 201 || result.actual !== result.expected,
   );
@@ -409,12 +482,37 @@ async function main(): Promise<void> {
         },
         expected: expected.summary,
         database,
+        categorizationValidation,
         recurrenceValidation,
       },
       null,
       2,
     ),
   );
+  const failures = [
+    ...(mismatches.length > 0 ? [`${mismatches.length} importacoes divergentes`] : []),
+    ...(database.transactions !== expected.summary.totalImportedTransactions
+      ? [
+          `transactions=${database.transactions}, esperado=${expected.summary.totalImportedTransactions}`,
+        ]
+      : []),
+    ...(reimport.status !== 201 || reimport.payload.transactionsCreated !== 0
+      ? ["reimportacao nao idempotente"]
+      : []),
+    ...(viewerImport.status !== 403 ? [`viewer retornou ${viewerImport.status}`] : []),
+    ...(crossCompany.status !== 404
+      ? [`cross-company retornou ${crossCompany.status}`]
+      : []),
+    ...(!categorizationValidation.uncategorizedBelow250
+      ? [`uncategorized=${database.uncategorizedPending}, meta < 250`]
+      : []),
+    ...(!recurrenceValidation.onePendingPerActionableSuggestion
+      ? ["invariante de pendencia acionavel de recorrencia violada"]
+      : []),
+  ];
+  if (failures.length > 0) {
+    throw new Error(`Published fixture validation failed: ${failures.join("; ")}`);
+  }
 }
 
 main()

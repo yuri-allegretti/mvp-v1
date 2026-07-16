@@ -31,6 +31,26 @@ async function main(): Promise<void> {
     where,
     _count: true,
   });
+  const categorizedByCompany = await prisma.transaction.groupBy({
+    by: ["companyId"],
+    where: { ...where, categoryId: { not: null } },
+    _count: true,
+    orderBy: { companyId: "asc" },
+  });
+  const categorizedByCategory = await prisma.transaction.groupBy({
+    by: ["companyId", "categoryId"],
+    where: { ...where, categoryId: { not: null } },
+    _count: true,
+    orderBy: [{ companyId: "asc" }, { categoryId: "asc" }],
+  });
+  const transactionSignals = {
+    counterparty: await prisma.transaction.count({
+      where: { ...where, counterpartyName: { not: null } },
+    }),
+    document: await prisma.transaction.count({
+      where: { ...where, documentNumber: { not: null } },
+    }),
+  };
   const recurrencesByPattern = await prisma.recurrenceSuggestion.groupBy({
     by: ["patternKind"],
     where: { ...where, status: { in: ["pending", "edited"] } },
@@ -129,6 +149,9 @@ async function main(): Promise<void> {
         pendingByType,
         pendingItemsByStatus,
         suggestionsByBand,
+        categorizedByCompany,
+        categorizedByCategory,
+        transactionSignals,
         recurrencesByPattern,
         recurrenceSuggestionsByStatus,
         distinctRecurrenceKeys,
